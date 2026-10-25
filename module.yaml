@@ -1,6 +1,7 @@
+schemaVersion: 1
 id: Android_Nakedcore
 name: Android Nakedcore
-version: v3.3.2
-versionCode: 332
-author: Nakedcore
-description: 一站式管理 sing-box / mihomo / Sub-Store：内核安装删除切换、配置校验与编辑、网络切换自动启停、Root 热点共享、本地面板与 WebUI。
+summary: 一站式管理 sing-box / mihomo / Sub-Store，支持内核切换、配置校验、热点共享与 WebUI。
+description: README.md
+authors:
+  - name: Nakedcore
