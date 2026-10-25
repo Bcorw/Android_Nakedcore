@@ -1,0 +1,612 @@
+#!/system/bin/sh
+# shellcheck shell=sh
+# shellcheck disable=SC3043
+# ============================================================
+# Android Nakedcore - CLI 入口
+# 一站式管理 sing-box / mihomo / Sub-Store
+#
+# 数据目录: /data/adb/nakedcore
+# 用法: nakedcore help
+# ============================================================
+
+# 解析自身路径：支持直接执行、symlink 和 wrapper exec
+NC_SELF_RAW="$0"
+NC_SELF_REAL=$(readlink -f "$NC_SELF_RAW" 2>/dev/null)
+[ -n "$NC_SELF_REAL" ] || NC_SELF_REAL="$NC_SELF_RAW"
+case "$NC_SELF_REAL" in
+    */nakedcore)
+        NC_MODDIR=$(cd "$(dirname "$NC_SELF_REAL")" 2>/dev/null && pwd)
+        ;;
+    *)
+        NC_MODDIR="/data/adb/modules/Android_Nakedcore"
+        ;;
+esac
+if [ ! -f "$NC_MODDIR/scripts/common.sh" ]; then
+    NC_MODDIR="/data/adb/modules/Android_Nakedcore"
+fi
+export NC_MODDIR
+
+# shellcheck source=scripts/common.sh
+. "$NC_MODDIR/scripts/common.sh"
+# shellcheck source=scripts/core.sh
+. "$NC_MODDIR/scripts/core.sh"
+# shellcheck source=scripts/substore.sh
+. "$NC_MODDIR/scripts/substore.sh"
+# shellcheck source=scripts/config.sh
+. "$NC_MODDIR/scripts/config.sh"
+# shellcheck source=scripts/task.sh
+. "$NC_MODDIR/scripts/task.sh"
+# shellcheck source=scripts/status.sh
+. "$NC_MODDIR/scripts/status.sh"
+# shellcheck source=scripts/wifi.sh
+. "$NC_MODDIR/scripts/wifi.sh"
+# shellcheck source=scripts/ui.sh
+. "$NC_MODDIR/scripts/ui.sh"
+# shellcheck source=scripts/hotspot.sh
+. "$NC_MODDIR/scripts/hotspot.sh"
+
+nc_init
+# 首次运行就准备好 env，避免状态页出现无意义的“缺少访问路径”
+nc_sub_ensure_env >/dev/null 2>&1 || true
+
+nc_usage() {
+    cat <<'EOF'
+Android Nakedcore CLI
+
+  nakedcore status                       输出完整状态 JSON
+  nakedcore info                         输出人类可读摘要
+  nakedcore version                      输出版本号
+
+内核:
+  nakedcore core start [sing-box|mihomo]
+  nakedcore core stop [sing-box|mihomo]
+  nakedcore core restart <sing-box|mihomo>
+  nakedcore core switch <sing-box|mihomo>
+  nakedcore core check [sing-box|mihomo]
+  nakedcore core update <sing-box|mihomo> [stable|alpha]
+  nakedcore core rollback <sing-box|mihomo>
+  nakedcore core delete <sing-box|mihomo>
+  nakedcore core info [sing-box|mihomo] 输出单个内核 JSON
+  nakedcore core latest <sing-box|mihomo> [stable|alpha]
+  nakedcore autostart <true|false>
+
+Wi-Fi 自动启停:
+  nakedcore wifi status                输出守护状态 JSON
+  nakedcore wifi enable|disable        开启/关闭自动启停
+  nakedcore wifi check                 立即检测一次
+  nakedcore wifi add <base64 SSID>     添加信任 Wi-Fi
+  nakedcore wifi remove <base64 SSID>  移除信任 Wi-Fi
+  nakedcore wifi resume                手动停止后恢复自动逻辑
+  nakedcore wifi start|stop            启动/停止后台守护
+
+热点代理共享:
+  nakedcore hotspot status             输出热点状态 JSON
+  nakedcore hotspot enable|disable     开启/关闭热点接管
+  nakedcore hotspot usb <true|false>   是否接管 USB 共享
+  nakedcore hotspot sync               立即检测并同步规则
+
+Sub-Store:
+  nakedcore sub start|stop|restart
+  nakedcore sub update <all|backend|frontend|node>
+  nakedcore sub autostart <true|false>
+  nakedcore sub regen-path
+  nakedcore sub set <KEY> <base64值>
+  nakedcore sub ensure-env
+  nakedcore sub info                    输出 Sub-Store JSON
+  nakedcore sub url                     输出直达地址
+
+本地面板:
+  nakedcore ui update <dashboard|zashboard>   下载到对应内核目录
+  nakedcore ui delete <dashboard|zashboard>   删除本地面板
+  nakedcore ui clear                         清理本地面板与下载缓存
+
+配置:
+  nakedcore cfg get <singbox|mihomo|substore>
+  nakedcore cfg put <target> <分块序号> <base64>
+  nakedcore cfg commit <target> [1]
+  nakedcore cfg reset <target>
+  nakedcore cfg check <target>
+  nakedcore cfg delete <target>
+  nakedcore cfg fetch <target> <base64URL> <base64目标格式> [1]
+  nakedcore cfg download <target>
+  nakedcore cfg export
+
+更新:
+  nakedcore checkup                      检查上游最新版本
+  nakedcore all update                   更新当前内核 + Sub-Store
+  nakedcore set <GH_PROXY|SINGBOX_CHANNEL|MIHOMO_CHANNEL> <base64值>
+
+任务 / 日志:
+  nakedcore task start <命令...>          后台执行并返回 {id}
+  nakedcore task status [id]
+  nakedcore task current
+  nakedcore task last
+  nakedcore task cancel <id>
+  nakedcore task log <id> [行数]
+  nakedcore log <singbox|mihomo|substore|wifi|hotspot|boot> [行数]
+  nakedcore log clear <singbox|mihomo|substore|wifi|hotspot|boot>
+
+Base64 参数由 WebUI 传入，避免引号/特殊字符破坏 shell。
+EOF
+}
+
+nc_cmd_info() {
+    nc_sub_load_env
+    printf 'Android Nakedcore %s\n' "$(nc_module_version)"
+    printf '设备: %s / Android %s / %s\n' "$(nc_prop ro.product.model)" "$(nc_prop ro.build.version.release)" "$NC_ABI"
+    printf '管理器: %s\n' "$(nc_manager)"
+    printf '数据目录: %s\n' "$NC_DATA"
+    printf '激活内核: %s (%s)\n' "$NC_ACTIVE_CORE" "$(nc_core_channel "$NC_ACTIVE_CORE")"
+    printf 'sing-box: %s\n' "$(nc_core_version sing-box)"
+    printf 'mihomo: %s\n' "$(nc_core_version mihomo)"
+    printf 'Sub-Store: %s\n' "$([ -x "$(nc_sub_node 2>/dev/null)" ] && nc_sub_node_version || printf '缺少 Node')"
+    printf 'Sub-Store 地址: %s\n' "$(nc_sub_direct_url)"
+    printf '开机自启: 内核=%s Sub-Store=%s\n' "$NC_AUTO_START" "$NC_SUB_AUTO_START"
+}
+
+nc_cmd_autostart() {
+    case "$1" in
+        true)
+            if ! nc_core_installed "$NC_ACTIVE_CORE"; then
+                nc_err "尚未安装 $NC_ACTIVE_CORE，无法开启自启"
+                return 1
+            fi
+            if ! nc_core_check "$NC_ACTIVE_CORE"; then
+                nc_err "配置校验未通过，无法开启自启"
+                return 1
+            fi
+            NC_AUTO_START="true"
+            nc_save_settings
+            nc_info "已开启内核开机自启 ($NC_ACTIVE_CORE)"
+            ;;
+        false)
+            NC_AUTO_START="false"
+            nc_save_settings
+            nc_info "已关闭内核开机自启"
+            ;;
+        *)
+            nc_err "用法: nakedcore autostart <true|false>"
+            return 2
+            ;;
+    esac
+    return 0
+}
+
+nc_cmd_sub_autostart() {
+    local _reason
+    case "$1" in
+        true)
+            _reason=$(nc_sub_health_reason)
+            if [ "$_reason" != "正常" ]; then
+                nc_err "Sub-Store 尚不可用: $_reason"
+                return 1
+            fi
+            NC_SUB_AUTO_START="true"
+            nc_save_settings
+            nc_info "已开启 Sub-Store 开机自启"
+            ;;
+        false)
+            NC_SUB_AUTO_START="false"
+            nc_save_settings
+            nc_info "已关闭 Sub-Store 开机自启"
+            ;;
+        *)
+            nc_err "用法: nakedcore sub autostart <true|false>"
+            return 2
+            ;;
+    esac
+    return 0
+}
+
+nc_cmd_set() {
+    local _b64 _key _rc _val
+    _key=$1
+    _b64=$2
+    [ -n "$_key" ] || { nc_err "缺少键名"; return 2; }
+    _val=$(printf '%s' "$_b64" | nc_b64decode 2>/dev/null)
+    _rc=$?
+    if [ "$_rc" -ne 0 ] && [ -n "$_b64" ]; then
+        nc_err "Base64 解码失败"
+        return 1
+    fi
+    case "$_key" in
+        GH_PROXY)
+            if [ -n "$_val" ]; then
+                case "$_val" in
+                    http://*|https://*) ;;
+                    *) nc_err "加速地址必须以 http:// 或 https:// 开头"; return 1 ;;
+                esac
+            fi
+            NC_GH_PROXY="$_val"
+            nc_save_settings || return 1
+            if [ -n "$_val" ]; then
+                nc_info "已设置 GitHub 加速地址: $_val"
+            else
+                nc_info "已清空 GitHub 加速地址（直连）"
+            fi
+            ;;
+        SINGBOX_CHANNEL)
+            case "$_val" in stable|alpha) ;; *) nc_err "通道只能是 stable 或 alpha"; return 1 ;; esac
+            NC_SB_CHANNEL="$_val"
+            nc_save_settings || return 1
+            nc_info "sing-box 默认通道: $_val"
+            ;;
+        MIHOMO_CHANNEL)
+            case "$_val" in stable|alpha) ;; *) nc_err "通道只能是 stable 或 alpha"; return 1 ;; esac
+            NC_MH_CHANNEL="$_val"
+            nc_save_settings || return 1
+            nc_info "mihomo 默认通道: $_val"
+            ;;
+        *)
+            nc_err "不支持的设置项: $_key"
+            return 2
+            ;;
+    esac
+    return 0
+}
+
+nc_cmd_all_update() {
+    local _channel _fail
+    _channel=$(nc_core_channel "$NC_ACTIVE_CORE")
+    _fail=0
+    nc_step "更新当前内核: $NC_ACTIVE_CORE ($_channel)"
+    nc_core_update "$NC_ACTIVE_CORE" "$_channel" || _fail=1
+    nc_step "更新 Sub-Store"
+    nc_sub_update all || _fail=1
+    [ "$_fail" = "0" ] && nc_info "一键更新完成"
+    return "$_fail"
+}
+
+nc_cmd_log() {
+    local _lines _name
+    _name=$1
+    _lines=${2:-200}
+    case "$_name" in
+        singbox|sing-box) tail -n "$_lines" "$(nc_core_log sing-box)" 2>/dev/null ;;
+        mihomo)           tail -n "$_lines" "$(nc_core_log mihomo)" 2>/dev/null ;;
+        substore|sub)     tail -n "$_lines" "$(nc_sub_log)" 2>/dev/null ;;
+        wifi)             tail -n "$_lines" "$NC_WIFI_LOG" 2>/dev/null ;;
+        hotspot)          tail -n "$_lines" "$NC_HOTSPOT_LOG" 2>/dev/null ;;
+        boot)             tail -n "$_lines" "$NC_LOG_BOOT" 2>/dev/null ;;
+        *) nc_err "未知日志: $_name"; return 2 ;;
+    esac
+    return 0
+}
+
+nc_cmd_log_clear() {
+    local _name
+    _name=$1
+    case "$_name" in
+        singbox|sing-box) : >"$(nc_core_log sing-box)" ;;
+        mihomo)           : >"$(nc_core_log mihomo)" ;;
+        substore|sub)     : >"$(nc_sub_log)" ;;
+        wifi)             : >"$NC_WIFI_LOG" ;;
+        hotspot)          : >"$NC_HOTSPOT_LOG" ;;
+        boot)             : >"$NC_LOG_BOOT" ;;
+        *) nc_err "未知日志: $_name"; return 2 ;;
+    esac
+    nc_info "已清空日志: $_name"
+    return 0
+}
+
+CMD=${1:-}
+[ "$#" -gt 0 ] && shift
+
+case "$CMD" in
+    status|json)
+        nc_status_json
+        ;;
+    info)
+        nc_cmd_info
+        ;;
+    version)
+        nc_module_version
+        printf '\n'
+        ;;
+    help|-h|--help|"")
+        nc_usage
+        ;;
+    core)
+        _sub=${1:-}
+        [ "$#" -gt 0 ] && shift
+        case "$_sub" in
+            start)
+                nc_core_start "${1:-$NC_ACTIVE_CORE}"
+                _rc=$?
+                if [ "$_rc" -eq 0 ] && [ "${NC_WIFI_SERVICE:-0}" != "1" ]; then
+                    nc_wifi_clear_manual_stop
+                fi
+                exit "$_rc"
+                ;;
+            stop)
+                nc_core_stop "${1:-}"
+                _rc=$?
+                if [ "${NC_WIFI_INTERNAL:-0}" != "1" ]; then
+                    nc_wifi_mark_manual_stop
+                fi
+                exit "$_rc"
+                ;;
+            restart)
+                nc_core_restart "${1:-$NC_ACTIVE_CORE}"
+                _rc=$?
+                if [ "$_rc" -eq 0 ]; then nc_wifi_clear_manual_stop; fi
+                exit "$_rc"
+                ;;
+            switch)
+                [ -n "$1" ] || { nc_err "缺少目标内核"; exit 2; }
+                nc_core_switch "$1"
+                _rc=$?
+                if [ "$_rc" -eq 0 ]; then nc_wifi_clear_manual_stop; fi
+                exit "$_rc"
+                ;;
+            check)
+                nc_core_check "${1:-$NC_ACTIVE_CORE}"
+                ;;
+            update)
+                _core=${1:-$NC_ACTIVE_CORE}
+                _ch=${2:-}
+                if [ -z "$_ch" ]; then
+                    _ch=$(nc_core_channel "$_core")
+                fi
+                nc_core_update "$_core" "$_ch"
+                ;;
+            rollback)
+                nc_core_rollback "${1:-$NC_ACTIVE_CORE}"
+                ;;
+            delete)
+                [ -n "$1" ] || { nc_err "缺少要删除的内核"; exit 2; }
+                nc_core_delete "$1"
+                ;;
+            info)
+                _core=${1:-$NC_ACTIVE_CORE}
+                nc_core_valid "$_core" || { nc_err "未知内核: $_core"; exit 2; }
+                nc_update_env_load
+                nc_status_core "$_core" || exit 1
+                printf '\n'
+                ;;
+            latest)
+                _core=${1:-$NC_ACTIVE_CORE}
+                _ch=${2:-stable}
+                nc_core_valid "$_core" || { nc_err "未知内核: $_core"; exit 2; }
+                nc_core_latest "$_core" "$_ch"
+                printf '\n'
+                ;;
+            *)
+                nc_usage
+                exit 2
+                ;;
+        esac
+        ;;
+    wifi)
+        _sub=${1:-status}
+        [ "$#" -gt 0 ] && shift
+        case "$_sub" in
+            status)
+                nc_wifi_status_json
+                printf '\n'
+                ;;
+            enable)
+                nc_wifi_enable
+                ;;
+            disable)
+                nc_wifi_disable
+                ;;
+            start)
+                nc_load_settings
+                if [ "$NC_WIFI_GUARD" != "true" ] && [ "$NC_HOTSPOT_ENABLED" != "true" ]; then
+                    nc_err "Wi-Fi 自动启停与热点共享均未开启"
+                    exit 1
+                fi
+                nc_wifi_start_daemon
+                ;;
+            stop)
+                nc_wifi_stop_daemon
+                ;;
+            check)
+                nc_wifi_tick
+                nc_wifi_status_json
+                printf '\n'
+                ;;
+            gate)
+                nc_wifi_gate
+                ;;
+            resume)
+                nc_wifi_resume
+                ;;
+            add)
+                [ -n "$1" ] || { nc_err "缺少 SSID"; exit 2; }
+                _ssid=$(printf '%s' "$1" | nc_b64decode) || { nc_err "SSID 解码失败"; exit 2; }
+                nc_wifi_add_ssid "$_ssid" || exit 1
+                nc_wifi_status_json
+                printf '\n'
+                ;;
+            remove)
+                [ -n "$1" ] || { nc_err "缺少 SSID"; exit 2; }
+                _ssid=$(printf '%s' "$1" | nc_b64decode) || { nc_err "SSID 解码失败"; exit 2; }
+                nc_wifi_remove_ssid "$_ssid" || exit 1
+                nc_wifi_status_json
+                printf '\n'
+                ;;
+            _daemon)
+                nc_wifi_daemon
+                ;;
+            *)
+                nc_usage
+                exit 2
+                ;;
+        esac
+        ;;
+    hotspot)
+        _sub=${1:-status}
+        [ "$#" -gt 0 ] && shift
+        case "$_sub" in
+            status)
+                nc_hotspot_status_json
+                printf '\n'
+                ;;
+            enable)
+                nc_hotspot_enable || exit 1
+                nc_hotspot_status_json
+                printf '\n'
+                ;;
+            disable)
+                nc_hotspot_disable || exit 1
+                nc_hotspot_status_json
+                printf '\n'
+                ;;
+            usb)
+                [ -n "$1" ] || { nc_err "用法: hotspot usb <true|false>"; exit 2; }
+                nc_hotspot_usb "$1" || exit 1
+                nc_hotspot_status_json
+                printf '\n'
+                ;;
+            sync)
+                nc_hotspot_sync || exit 1
+                nc_hotspot_status_json
+                printf '\n'
+                ;;
+            *)
+                nc_usage
+                exit 2
+                ;;
+        esac
+        ;;
+    autostart)
+        nc_cmd_autostart "$1"
+        ;;
+    sub)
+        _sub=${1:-}
+        [ "$#" -gt 0 ] && shift
+        case "$_sub" in
+            start) nc_sub_start ;;
+            stop) nc_sub_stop ;;
+            restart) nc_sub_restart ;;
+            update) nc_sub_update "${1:-all}" ;;
+            autostart) nc_cmd_sub_autostart "$1" ;;
+            regen-path) nc_sub_regen_path ;;
+            set)
+                [ -n "$1" ] && [ -n "$2" ] || { nc_err "用法: sub set <KEY> <base64值>"; exit 2; }
+                _key=$1
+                _val=$(printf '%s' "$2" | nc_b64decode 2>/dev/null)
+                nc_sub_set "$_key" "$_val"
+                ;;
+            ensure-env)
+                nc_sub_ensure_env
+                printf '%s\n' "$NC_SUB_ENV"
+                ;;
+            info)
+                nc_update_env_load
+                nc_status_substore
+                printf '\n'
+                ;;
+            url)
+                nc_sub_direct_url
+                printf '\n'
+                ;;
+            *)
+                nc_usage
+                exit 2
+                ;;
+        esac
+        ;;
+    cfg)
+        _sub=${1:-}
+        [ "$#" -gt 0 ] && shift
+        case "$_sub" in
+            get) nc_cfg_get "$1" ;;
+            put) nc_cfg_put "$1" "$2" "$3" ;;
+            commit) nc_cfg_commit "$1" "${2:-0}" ;;
+            reset) nc_cfg_reset "$1" ;;
+            check) nc_cfg_check "$1" ;;
+            delete) nc_cfg_delete "$1" ;;
+            fetch) nc_cfg_fetch "$1" "$2" "$3" "${4:-0}" ;;
+            download) nc_cfg_download "$1" ;;
+            export) nc_cfg_export ;;
+            *)
+                nc_usage
+                exit 2
+                ;;
+        esac
+        ;;
+    ui)
+        _sub=${1:-}
+        [ "$#" -gt 0 ] && shift
+        case "$_sub" in
+            update|delete)
+                [ -n "$1" ] || { nc_err "缺少面板类型: dashboard|zashboard"; exit 2; }
+                if [ "$_sub" = "update" ]; then nc_ui_update "$1"; else nc_ui_delete "$1"; fi
+                ;;
+            clear)
+                nc_ui_clear
+                ;;
+            *)
+                nc_usage
+                exit 2
+                ;;
+        esac
+        ;;
+    checkup)
+        nc_checkup
+        ;;
+    all)
+        _sub=${1:-}
+        [ "$#" -gt 0 ] && shift
+        case "$_sub" in
+            update) nc_cmd_all_update ;;
+            *) nc_usage; exit 2 ;;
+        esac
+        ;;
+    set)
+        nc_cmd_set "$1" "$2"
+        ;;
+    log)
+        if [ "$1" = "clear" ]; then
+            shift
+            nc_cmd_log_clear "$1"
+        else
+            nc_cmd_log "$1" "$2"
+        fi
+        ;;
+    task)
+        _sub=${1:-}
+        [ "$#" -gt 0 ] && shift
+        case "$_sub" in
+            start)
+                nc_task_start "$@"
+                ;;
+            status)
+                if [ -n "$1" ]; then
+                    nc_task_status "$1"
+                else
+                    _id=$(nc_task_current_id 2>/dev/null)
+                    [ -n "$_id" ] && nc_task_status "$_id" || printf '{"error":"no running task"}\n'
+                fi
+                ;;
+            current)
+                nc_task_current_json
+                printf '\n'
+                ;;
+            last)
+                nc_task_last_json
+                printf '\n'
+                ;;
+            cancel)
+                nc_task_cancel "$1"
+                ;;
+            log)
+                nc_task_log "$1" "${2:-200}"
+                ;;
+            _run)
+                nc_task_run "$1"
+                ;;
+            *)
+                nc_usage
+                exit 2
+                ;;
+        esac
+        ;;
+    *)
+        nc_usage
+        exit 2
+        ;;
+esac
