@@ -177,7 +177,7 @@ WebUI 支持 **深色 / 浅色 / 跟随系统**，适配窄屏、手势安全区
 
 ### 真机验证
 
-已在 **Pixel 6（fuxi）/ Android 13 / KernelSU** 上验证：
+已在 **Xiaomi 13（fuxi）/ Android 17 / KernelSU** 实机上验证：
 
 - 软热点接口：`wlan2`
 - 热点网段：`10.207.120.0/24`
