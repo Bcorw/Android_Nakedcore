@@ -80,10 +80,12 @@ nc_conn_region() {
 }
 
 nc_conn_region_blocked() {
-    case " $1 " in
-        *" $2 "*) return 0 ;;
-        *) return 1 ;;
-    esac
+    local _needle _word
+    _needle=$1
+    for _word in $2; do
+        [ "$_needle" = "$_word" ] && return 0
+    done
+    return 1
 }
 
 # ---------- HTTP 层 ----------
@@ -209,13 +211,16 @@ nc_check_chatgpt() {
 }
 
 nc_check_gemini() {
-    local _code
+    local _code _raw
     nc_conn_get "https://gemini.google.com" || return 0
     _code=$(nc_conn_body_match ',2,1,200,"[A-Z][A-Z][A-Z]' | sed 's/.*"//')
     [ -n "$_code" ] || { _c_status=failed; return 0; }
+    _raw=$_code
     _c_region=$(nc_conn_region "$_code")
     _c_status=available
-    nc_conn_region_blocked "$_c_region" "CHN RUS BLR CUB IRN PRK SYR HKG MAC" && _c_status=unsupported-region
+    # FlClash 的 Gemini 限制列表是三字码；必须用原始值匹配，
+    # 不能先规范成 CN 再和 CHN 列表比较。
+    nc_conn_region_blocked "$_raw" "CHN RUS BLR CUB IRN PRK SYR HKG MAC" && _c_status=unsupported-region
 }
 
 nc_check_youtube() {

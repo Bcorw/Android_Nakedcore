@@ -2881,7 +2881,7 @@
       'disney-plus': 'unsupported-region',
       'prime-video': 'unavailable',
       spotify: 'restricted',
-      gemini: 'available'
+      gemini: 'unsupported-region'
     };
     MOCK_CONN_ITEMS.forEach(function (item, i) {
       var status = forced[item.id] || 'available';
