@@ -1,6 +1,6 @@
 id=Android_Nakedcore
 name=Android Nakedcore
-version=v3.3.3
-versionCode=333
+version=v3.3.4
+versionCode=334
 author=Nakedcore
 description=一站式管理 sing-box / mihomo / Sub-Store：内核安装删除切换、配置校验与编辑、网络切换自动启停、Root 热点共享、连通性测试、本地面板与 WebUI。
