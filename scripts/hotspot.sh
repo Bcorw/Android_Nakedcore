@@ -377,9 +377,6 @@ nc_hotspot_disable() {
     NC_HOTSPOT_ENABLED="false"
     nc_save_settings || return 1
     nc_hotspot_sync
-    if [ "$NC_WIFI_GUARD" != "true" ]; then
-        nc_wifi_stop_daemon 2>/dev/null || true
-    fi
     nc_hotspot_log "热点代理共享已关闭"
     return 0
 }

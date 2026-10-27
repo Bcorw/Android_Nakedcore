@@ -65,10 +65,10 @@ sleep 5
 nc_info "开机启动: 激活内核=$NC_ACTIVE_CORE 内核自启=$NC_AUTO_START Sub-Store 自启=$NC_SUB_AUTO_START"
 
 _wifi_allow=0
-if [ "$NC_WIFI_GUARD" = "true" ] || [ "$NC_HOTSPOT_ENABLED" = "true" ]; then
-    nc_info "网络守护启动: Wi-Fi=$NC_WIFI_GUARD 热点=$NC_HOTSPOT_ENABLED"
-    "$NC_SELF" wifi start >/dev/null 2>&1
-fi
+# 常驻网络守护必须从开机服务启动，不能只依赖 WebUI 进程；
+# 否则退出 KernelSU 管理器后守护会被一起回收。
+nc_info "网络守护启动: Wi-Fi=$NC_WIFI_GUARD 热点=$NC_HOTSPOT_ENABLED"
+"$NC_SELF" wifi start >/dev/null 2>&1
 if [ "$NC_WIFI_GUARD" = "true" ]; then
     if ! "$NC_SELF" wifi gate; then
         _wifi_allow=1

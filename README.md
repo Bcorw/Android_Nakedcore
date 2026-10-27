@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v3.3.2-2f6fed">
+  <img alt="version" src="https://img.shields.io/badge/version-v3.3.3-2f6fed">
   <img alt="platform" src="https://img.shields.io/badge/platform-Android%208%2B-3ddc84">
   <img alt="root" src="https://img.shields.io/badge/root-KernelSU%20%7C%20Magisk%20%7C%20APatch-111111">
   <img alt="license" src="https://img.shields.io/badge/license-GPL--3.0-blue">
@@ -25,10 +25,11 @@ Android Nakedcore 是一个面向 **Magisk / KernelSU / APatch** 的裸核代理
 - **订阅管理**：Sub-Store + Node，支持合并端口、前后端分离和随机访问路径
 - **配置编辑**：在线编辑、远程拉取、分块上传、保存前校验、`.bak` 备份
 - **网络自动化**：Wi-Fi 到家暂停、离家恢复；Root 热点 / USB 共享接管
+- **连通性测试**：常用 AI / 流媒体 / 国内 / 社区 / 开发者服务可达性、延迟与出口地区
 - **可恢复**：异步任务落盘、运行时副本、终端 wrapper 不依赖 `/system`
 - **无内置大二进制**：首次使用时从上游 release 下载 Node / 内核 / Sub-Store
 
-> 当前版本：**v3.3.2** · 已在 Xiaomi 13（fuxi）/ Android 17 / KernelSU 实机验证。
+> 当前版本：**v3.3.3** · 已在 Xiaomi 13（fuxi）/ Android 17 / KernelSU 实机验证。
 
 ## 界面
 
@@ -50,15 +51,21 @@ Android Nakedcore 是一个面向 **Magisk / KernelSU / APatch** 的裸核代理
 <p align="center"><sub>配置：在线编辑、备份、本地面板与设备信息</sub></p>
 
 <details>
-<summary><strong>更多界面：自动化 / Sub-Store 设置 / 运行日志</strong></summary>
+<summary><strong>更多界面：自动化 / Sub-Store 设置 / 运行日志 / 连通性测试</strong></summary>
 
 <p align="center">
   <img src="docs/screenshots/automation.jpg" width="280" alt="自动化">
   <img src="docs/screenshots/substore-settings.jpg" width="280" alt="Sub-Store 设置">
 </p>
+<p align="center"><sub>自动化 / Sub-Store 设置</sub></p>
 <p align="center">
   <img src="docs/screenshots/console.jpg" width="280" alt="运行与日志">
 </p>
+<p align="center"><sub>运行与日志</sub></p>
+<p align="center">
+  <img src="docs/screenshots/connectivity.jpg" width="280" alt="连通性测试">
+</p>
+<p align="center"><sub>连通性测试</sub></p>
 
 </details>
 
@@ -99,6 +106,14 @@ Android Nakedcore 是一个面向 **Magisk / KernelSU / APatch** 的裸核代理
 - 热点规则使用独立链 `NC_HS_*`、策略路由 `9000 / 9010` 和本地表 `1888`
 - 内核启停、热点开关、守护循环自动同步；关闭或停止内核时幂等清理
 
+### 连通性测试
+
+- 28 个常用服务，按 AI / 流媒体 / 国内直连 / 社区平台 / 开发者分类
+- 通过当前系统网络 / TUN 执行 curl，记录 HTTP 状态、延迟和出口地区
+- 统计「已完成 / 未解锁 / 其他」，支持分类筛选和单项刷新
+- 结果持久化，重新打开 WebUI 仍可查看
+- 流媒体「已解锁」只代表 HTTP 可达，不保证内容版权可用
+
 ### 本地面板
 
 - Dashboard → `sing-box/ui/dashboard`
@@ -125,7 +140,7 @@ Android Nakedcore 是一个面向 **Magisk / KernelSU / APatch** 的裸核代理
 
 ### 安装
 
-1. 下载 `Android_Nakedcore-v3.3.2.zip`；
+1. 下载 `Android_Nakedcore-v3.3.3.zip`；
 2. 在 Magisk / KernelSU / APatch 管理器中「从本地安装」；
 3. 重启设备，或直接打开模块 WebUI；
 4. 进入「核心」页安装 sing-box / mihomo。
@@ -168,6 +183,11 @@ nakedcore hotspot enable
 nakedcore hotspot usb true
 nakedcore hotspot sync
 nakedcore hotspot disable
+
+nakedcore connectivity list
+nakedcore connectivity results
+nakedcore connectivity test
+nakedcore connectivity probe openai
 
 nakedcore ui update dashboard
 nakedcore ui clear
@@ -247,13 +267,13 @@ nakedcore log hotspot 200
 ```sh
 ./build.sh
 # 或覆盖版本名
-./build.sh 3.3.2
+./build.sh 3.3.3
 ```
 
 输出：
 
 ```text
-build/Android_Nakedcore-v3.3.2.zip
+build/Android_Nakedcore-v3.3.3.zip
 ```
 
 构建会校验 shell 语法、`webroot/index.html`、`app.js` 和模块入口文件。

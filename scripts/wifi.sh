@@ -398,14 +398,22 @@ nc_wifi_daemon() {
     nc_wifi_log_rotate
     printf '%s\n' "$$" >"$NC_WIFI_PID" 2>/dev/null
     trap 'rm -f "$NC_WIFI_PID" 2>/dev/null; exit 0' INT TERM EXIT
-    nc_wifi_log "Wi-Fi 守护启动（间隔 ${NC_WIFI_INTERVAL}s）"
+    nc_wifi_log "网络守护启动（间隔 ${NC_WIFI_INTERVAL}s）"
 
+    _idle_logged=0
     while :; do
         nc_load_settings
         if [ "$NC_WIFI_GUARD" != "true" ] && [ "$NC_HOTSPOT_ENABLED" != "true" ]; then
-            nc_wifi_log "Wi-Fi 与热点守护均已关闭，守护退出"
-            break
+            # 保持守护常驻：KernelSU WebUI / 管理器进程退出时，
+            # 由 service.sh 启动的守护仍在后台，重新开启功能无需再拉起。
+            if [ "$_idle_logged" = "0" ]; then
+                nc_wifi_log "Wi-Fi 与热点均关闭，网络守护待命"
+                _idle_logged=1
+            fi
+            sleep "$NC_WIFI_INTERVAL"
+            continue
         fi
+        _idle_logged=0
         if [ "$NC_HOTSPOT_ENABLED" = "true" ]; then
             nc_hotspot_sync
         fi
@@ -434,9 +442,7 @@ nc_wifi_disable() {
     nc_load_settings
     NC_WIFI_GUARD="false"
     nc_save_settings || return 1
-    if [ "$NC_HOTSPOT_ENABLED" != "true" ]; then
-        nc_wifi_stop_daemon
-    fi
+    # 保留常驻网络守护，避免下次在 WebUI 内重新拉起后被管理器进程回收
     nc_wifi_clear_suspended
     nc_wifi_clear_manual_stop
     rm -f "$NC_WIFI_DIR/next_try" 2>/dev/null

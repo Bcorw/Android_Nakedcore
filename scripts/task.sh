@@ -42,6 +42,7 @@ nc_task_label() {
         "cfg export"*)       printf '导出配置' ;;
         "all update"*)       printf '一键更新' ;;
         "checkup"*)          printf '检查更新' ;;
+        "connectivity test"*) printf '连通性测试' ;;
         *)                   printf '执行任务' ;;
     esac
 }

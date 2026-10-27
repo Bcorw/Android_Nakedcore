@@ -54,7 +54,7 @@ chmod 755 "$STAGE/nakedcore" "$STAGE"/*.sh "$STAGE"/scripts/*.sh "$STAGE/META-IN
 
 info "校验 shell 语法"
 for f in nakedcore scripts/common.sh scripts/core.sh scripts/substore.sh scripts/config.sh \
-    scripts/task.sh scripts/status.sh scripts/ui.sh scripts/hotspot.sh service.sh action.sh customize.sh uninstall.sh; do
+    scripts/task.sh scripts/status.sh scripts/ui.sh scripts/hotspot.sh scripts/connectivity.sh service.sh action.sh customize.sh uninstall.sh; do
     [ -f "$STAGE/$f" ] || die "缺少文件: $f"
     sh -n "$STAGE/$f" || die "语法错误: $f"
 done

@@ -44,6 +44,8 @@ export NC_MODDIR
 . "$NC_MODDIR/scripts/ui.sh"
 # shellcheck source=scripts/hotspot.sh
 . "$NC_MODDIR/scripts/hotspot.sh"
+# shellcheck source=scripts/connectivity.sh
+. "$NC_MODDIR/scripts/connectivity.sh"
 
 nc_init
 # 首次运行就准备好 env，避免状态页出现无意义的“缺少访问路径”
@@ -84,6 +86,12 @@ Wi-Fi 自动启停:
   nakedcore hotspot enable|disable     开启/关闭热点接管
   nakedcore hotspot usb <true|false>   是否接管 USB 共享
   nakedcore hotspot sync               立即检测并同步规则
+
+连通性测试:
+  nakedcore connectivity list          输出服务与分类 JSON
+  nakedcore connectivity results       输出最近一次测试 JSON
+  nakedcore connectivity test          测试全部服务并写入结果
+  nakedcore connectivity probe <id>    测试单个服务
 
 Sub-Store:
   nakedcore sub start|stop|restart
@@ -392,11 +400,6 @@ case "$CMD" in
                 nc_wifi_disable
                 ;;
             start)
-                nc_load_settings
-                if [ "$NC_WIFI_GUARD" != "true" ] && [ "$NC_HOTSPOT_ENABLED" != "true" ]; then
-                    nc_err "Wi-Fi 自动启停与热点共享均未开启"
-                    exit 1
-                fi
                 nc_wifi_start_daemon
                 ;;
             stop)
@@ -463,6 +466,33 @@ case "$CMD" in
             sync)
                 nc_hotspot_sync || exit 1
                 nc_hotspot_status_json
+                printf '\n'
+                ;;
+            *)
+                nc_usage
+                exit 2
+                ;;
+        esac
+        ;;
+    connectivity)
+        _sub=${1:-status}
+        [ "$#" -gt 0 ] && shift
+        case "$_sub" in
+            list)
+                nc_conn_list_json
+                printf '\n'
+                ;;
+            results|status)
+                nc_conn_results_json
+                printf '\n'
+                ;;
+            test)
+                nc_conn_test
+                ;;
+            probe)
+                [ -n "$1" ] || { nc_err "用法: connectivity probe <id>"; exit 2; }
+                nc_conn_valid "$1" || { nc_err "未知服务: $1"; exit 2; }
+                nc_conn_probe_json "$1"
                 printf '\n'
                 ;;
             *)

@@ -21,6 +21,23 @@
     mihomo: { name: 'mihomo', icon: 'cat', tagline: 'Clash.Meta 兼容内核 · 面板生态丰富' }
   };
 
+  var CONN_CATEGORIES = [
+    ['all', '全部'],
+    ['ai', 'AI'],
+    ['stream', '流媒体'],
+    ['cn', '国内直连'],
+    ['community', '社区平台'],
+    ['dev', '开发者']
+  ];
+
+  var CONN_CATEGORY_LABELS = {
+    ai: 'AI',
+    stream: '流媒体',
+    cn: '国内直连',
+    community: '社区平台',
+    dev: '开发者'
+  };
+
   var TARGET_META = {
     singbox: { label: 'sing-box', path: DATA_DIR + '/sing-box/config.json', file: 'config.json' },
     mihomo: { label: 'mihomo', path: DATA_DIR + '/mihomo/config.yaml', file: 'config.yaml' },
@@ -191,6 +208,7 @@
     plus: '<path d="M12 5v14"/><path d="M5 12h14"/>',
     wifi: '<path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5.5 5.5 0 0 1 7 0"/><path d="M12 19h.01"/>',
     hotspot: '<circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 0 0 0 7"/><path d="M5 5a10 10 0 0 0 0 14"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/>',
+    radar: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="M12 12 18.5 5.5"/><circle cx="12" cy="12" r="1"/>',
     link: '<path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1-1"/>',
     package: '<path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z"/><path d="m4 7.5 8 4.5 8-4.5"/><path d="M12 12v9"/>',
     server: '<rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01"/><path d="M7 17h.01"/>',
@@ -336,6 +354,17 @@
       dirty: false,
       loading: false
     },
+    conn: {
+      items: [],
+      results: {},
+      region: '',
+      testedAt: 0,
+      loaded: false,
+      loading: false,
+      error: '',
+      filter: 'all',
+      probing: {}
+    },
     forms: {
       pull: {
         singbox: { url: '', force: false },
@@ -413,7 +442,7 @@
   }
 
   function setPage(page) {
-    if (page !== 'home' && page !== 'core' && page !== 'config') page = 'home';
+    if (page !== 'home' && page !== 'core' && page !== 'config' && page !== 'connectivity') page = 'home';
     state.pageScroll[state.page] = window.scrollY || 0;
     state.page = page;
     $$('.page').forEach(function (el) { el.classList.toggle('is-active', el.dataset.page === page); });
@@ -427,12 +456,14 @@
     renderPage();
     window.scrollTo(0, state.pageScroll[page] || 0);
     if (page === 'config' && !state.config.content && !state.config.loading) loadConfig(state.config.target);
+    if (page === 'connectivity' && !state.conn.loaded && !state.conn.loading) loadConnectivity();
     if (!state.status) refreshStatus(false);
   }
 
   function renderPage() {
     if (state.page === 'home') renderHome();
     else if (state.page === 'core') renderCore();
+    else if (state.page === 'connectivity') renderConnectivity();
     else renderConfigPage();
   }
 
@@ -1126,6 +1157,206 @@
       '</section>';
   }
 
+  // ----------------------------------------------------------
+  // 连通性测试
+  // ----------------------------------------------------------
+  function connCategoryLabel(cat) {
+    return CONN_CATEGORY_LABELS[cat] || cat || '其他';
+  }
+
+  function connTone(status) {
+    if (status === 'unlocked' || status === 'ok') return 'ok';
+    if (status === 'locked') return 'bad';
+    if (status === 'other') return 'warn';
+    return 'neutral';
+  }
+
+  function connStatusText(result) {
+    if (!result) return '未测试';
+    return result.label || (result.status === 'locked' ? '未解锁' : result.status === 'unlocked' ? '已解锁' : result.status === 'ok' ? '已完成' : '其他');
+  }
+
+  function connColorStyle(item) {
+    var color = String(item && item.color || '');
+    if (!/^#[0-9a-f]{3,8}$/i.test(color)) color = '#64748b';
+    return 'background:' + color + '1a;color:' + color + ';';
+  }
+
+  function connMetric(result) {
+    if (!result) return '尚未测试';
+    var parts = [];
+    if (result.region) parts.push(result.region);
+    if (result.latency_ms) parts.push(result.latency_ms + ' ms');
+    if (result.http) parts.push('HTTP ' + result.http);
+    return parts.length ? parts.join(' · ') : (result.error || '无响应');
+  }
+
+  function connCounts() {
+    var counts = { done: 0, locked: 0, other: 0 };
+    (state.conn.items || []).forEach(function (item) {
+      var result = state.conn.results[item.id];
+      if (!result) {
+        counts.other++;
+      } else if (result.status === 'ok' || result.status === 'unlocked') {
+        counts.done++;
+      } else if (result.status === 'locked') {
+        counts.locked++;
+      } else {
+        counts.other++;
+      }
+    });
+    return counts;
+  }
+
+  function connRow(item) {
+    var result = state.conn.results[item.id];
+    var probing = !!state.conn.probing[item.id];
+    var status = probing ? 'probing' : (result && result.status) || 'untested';
+    var tone = probing ? 'neutral' : connTone(status);
+    var label = probing ? '测试中' : connStatusText(result);
+    var disabled = disableAttr();
+    return '<div class="conn-row">' +
+      '<span class="conn-logo" style="' + connColorStyle(item) + '"><b>' + escapeHTML(item.abbr || item.name.slice(0, 2)) + '</b></span>' +
+      '<div class="conn-main"><div class="conn-name">' + escapeHTML(item.name) + '</div>' +
+      '<div class="conn-metrics">' + (probing ? '<span class="spinner spinner--xs"></span> 正在探测…' : escapeHTML(connMetric(result))) + '</div></div>' +
+      '<div class="conn-side"><span class="pill pill--' + tone + '">' + (probing ? '<span class="spinner spinner--xs"></span>' : '') + escapeHTML(label) + '</span>' +
+      '<button class="conn-icon" type="button" data-action="conn.detail" data-id="' + escapeHTML(item.id) + '" aria-label="查看 ' + escapeHTML(item.name) + ' 详情">' + icon('info', 15) + '</button>' +
+      '<button class="conn-icon" type="button" data-action="conn.refresh" data-id="' + escapeHTML(item.id) + '" aria-label="重新测试 ' + escapeHTML(item.name) + '"' + (probing ? ' disabled' : disabled) + '>' + icon('refresh', 15) + '</button></div></div>';
+  }
+
+  function renderConnectivity() {
+    var root = $('#connectivity-body');
+    if (!root) return;
+    var c = state.conn;
+    var counts = connCounts();
+    var testing = taskRunning() && state.task && state.task.label === '连通性测试';
+    var head = '<div class="section-head conn-head"><div><h2>连通性测试</h2><p>通过当前网络与内核 TUN 检测常用服务可达性</p></div>' +
+      '<div class="conn-head__actions"><button class="btn btn--soft btn--sm" type="button" data-action="conn.reload"' + disableAttr() + '>' + icon('refresh', 14) + '刷新</button>' +
+      '<button class="btn btn--primary btn--sm" type="button" data-action="conn.test"' + disableAttr() + '>' + icon('play', 14) + (testing ? '测试中…' : '全部测试') + '</button></div></div>';
+
+    var summary = '<div class="conn-summary">' +
+      '<div class="conn-stat conn-stat--ok"><strong>' + counts.done + '</strong><span>已完成</span></div>' +
+      '<div class="conn-stat conn-stat--bad"><strong>' + counts.locked + '</strong><span>未解锁</span></div>' +
+      '<div class="conn-stat conn-stat--warn"><strong>' + counts.other + '</strong><span>其他</span></div>' +
+      '</div>';
+
+    var filters = '<div class="conn-filters" role="tablist" aria-label="连通性分类">' + CONN_CATEGORIES.map(function (it) {
+      return '<button class="conn-filter' + (c.filter === it[0] ? ' is-active' : '') + '" type="button" role="tab" aria-selected="' + (c.filter === it[0] ? 'true' : 'false') + '" data-action="conn.filter" data-filter="' + it[0] + '">' + escapeHTML(it[1]) + '</button>';
+    }).join('') + '</div>';
+
+    var note = '';
+    if (testing) {
+      note = '<div class="conn-running"><span class="spinner"></span><span>正在测试全部服务，结果会在完成后写入。</span></div>';
+    } else if (c.testedAt) {
+      note = '<div class="conn-tested">最近测试 ' + escapeHTML(fmtTime(c.testedAt)) + (c.region ? ' · 出口 ' + escapeHTML(c.region) : '') + '</div>';
+    }
+
+    var body;
+    if (c.loading && !c.loaded) {
+      body = '<div class="card conn-loading"><div class="skeleton skeleton--line"></div><div class="skeleton skeleton--line"></div><div class="skeleton skeleton--line"></div></div>';
+    } else if (c.error && !c.items.length) {
+      body = '<div class="card conn-empty">' + icon('alert', 24) + '<div class="conn-empty__title">无法读取服务列表</div><div class="conn-empty__text">' + escapeHTML(c.error) + '</div><button class="btn btn--soft btn--sm" type="button" data-action="conn.reload">重试</button></div>';
+    } else if (!c.items.length) {
+      body = '<div class="card conn-empty">' + icon('radar', 24) + '<div class="conn-empty__title">暂无服务</div><div class="conn-empty__text">首次加载完成后可开始检测。</div></div>';
+    } else {
+      var list = c.filter === 'all' ? c.items : c.items.filter(function (item) { return item.category === c.filter; });
+      if (!list.length) {
+        body = '<div class="conn-empty conn-empty--plain">该分类暂无服务</div>';
+      } else {
+        var groups = {};
+        var order = [];
+        list.forEach(function (item) {
+          var cat = item.category || 'other';
+          if (!groups[cat]) { groups[cat] = []; order.push(cat); }
+          groups[cat].push(item);
+        });
+        body = '<div class="conn-groups">' + order.map(function (cat) {
+          return '<div class="conn-group"><div class="conn-group__label">' + escapeHTML(connCategoryLabel(cat)) + '<span>' + groups[cat].length + '</span></div>' +
+            groups[cat].map(connRow).join('') + '</div>';
+        }).join('') + '</div>';
+      }
+    }
+
+    root.innerHTML = '<section class="conn-page">' + head + summary + filters + note + body +
+      '<div class="hint conn-hint">结果来自本机 curl，仅代表当前网络环境；流媒体「已解锁」为 HTTP 可达判断，不保证内容版权可用。</div></section>';
+  }
+
+  async function loadConnectivity(force) {
+    var c = state.conn;
+    if (c.loading) return;
+    if (c.loaded && !force) return;
+    c.loading = true;
+    c.error = '';
+    if (state.page === 'connectivity') renderConnectivity();
+    try {
+      var listRes = await runCli(['connectivity', 'list']);
+      if (!listRes.ok) throw new Error(firstLine(listRes.stderr || listRes.stdout) || '读取服务列表失败');
+      var list = parseJSON(listRes.stdout);
+      var results = { tested_at: 0, region: '', results: {} };
+      var resultsRes = await runCli(['connectivity', 'results']);
+      if (resultsRes.ok) {
+        try { results = parseJSON(resultsRes.stdout); } catch (e) { /* keep empty */ }
+      }
+      c.items = Array.isArray(list) ? list : [];
+      c.results = results.results || {};
+      c.region = results.region || '';
+      c.testedAt = Number(results.tested_at) || 0;
+      c.loaded = true;
+    } catch (e) {
+      c.error = e && e.message ? e.message : String(e);
+    } finally {
+      c.loading = false;
+      if (state.page === 'connectivity') renderConnectivity();
+    }
+  }
+
+  async function testConnectivity() {
+    if (state.busy || taskRunning()) return;
+    if (!state.conn.loaded) await loadConnectivity();
+    await startTask('连通性测试', ['connectivity', 'test'], function () {
+      loadConnectivity(true);
+    });
+  }
+
+  async function refreshConnectivity(id) {
+    var item = (state.conn.items || []).filter(function (x) { return x.id === id; })[0];
+    if (!item || state.conn.probing[id] || taskRunning()) return;
+    state.conn.probing[id] = true;
+    if (state.page === 'connectivity') renderConnectivity();
+    try {
+      var res = await runCli(['connectivity', 'probe', id]);
+      if (!res.ok) throw new Error(firstLine(res.stderr || res.stdout) || '测试失败');
+      state.conn.results[id] = parseJSON(res.stdout);
+      state.conn.testedAt = Math.floor(Date.now() / 1000);
+      toast(item.name + '：' + connStatusText(state.conn.results[id]), 'ok', 1800);
+    } catch (e) {
+      toast(e.message || '连通性测试失败', 'err');
+    } finally {
+      delete state.conn.probing[id];
+      if (state.page === 'connectivity') renderConnectivity();
+    }
+  }
+
+  function openConnDetail(id) {
+    var item = (state.conn.items || []).filter(function (x) { return x.id === id; })[0];
+    if (!item) return;
+    var result = state.conn.results[id];
+    var rows = [
+      ['状态', connStatusText(result)],
+      ['分类', connCategoryLabel(item.category)],
+      ['地址', item.url],
+      ['出口', result && result.region ? result.region : '—'],
+      ['延迟', result && result.latency_ms ? result.latency_ms + ' ms' : '—'],
+      ['HTTP', result && result.http ? String(result.http) : '—'],
+      ['测试时间', result && result.tested_at ? fmtTime(result.tested_at) : '—']
+    ];
+    var body = '<div class="conn-detail">' + rows.map(function (row) {
+      return '<div class="conn-detail__row"><span>' + escapeHTML(row[0]) + '</span><strong' + (row[0] === '地址' ? ' class="inline-code"' : '') + '>' + escapeHTML(row[1]) + '</strong></div>';
+    }).join('') + (result && result.error ? '<div class="conn-detail__error">' + escapeHTML(result.error) + '</div>' : '') +
+      '<button class="btn btn--soft btn--sm btn--block" type="button" data-action="conn.refresh" data-id="' + escapeHTML(id) + '"' + disableAttr() + '>' + icon('refresh', 14) + '重新测试</button></div>';
+    openSheet({ type: 'conn-detail', title: item.name, sub: connCategoryLabel(item.category), body: body, actions: [{ label: '关闭', action: 'sheet.close', cls: 'btn--ghost' }] });
+  }
+
   function updateConfigDynamic() {
     if (state.page !== 'config' || !state.status) return;
     var s = state.status;
@@ -1497,6 +1728,8 @@
     if (/^ui clear/.test(a)) return '清空内核目录';
     if (/^all update/.test(a)) return '一键更新';
     if (/^checkup/.test(a)) return '检查更新';
+    if (/^connectivity test/.test(a)) return '连通性测试';
+    if (/^connectivity probe/.test(a)) return '连通性测试';
     return '执行任务';
   }
 
@@ -2222,6 +2455,22 @@
       case 'refresh':
         refreshStatus(true);
         break;
+      case 'conn.test':
+        testConnectivity();
+        break;
+      case 'conn.reload':
+        loadConnectivity(true);
+        break;
+      case 'conn.filter':
+        state.conn.filter = el.dataset.filter || 'all';
+        renderConnectivity();
+        break;
+      case 'conn.detail':
+        openConnDetail(el.dataset.id);
+        break;
+      case 'conn.refresh':
+        refreshConnectivity(el.dataset.id);
+        break;
       case 'go.home':
         setPage('home');
         break;
@@ -2585,12 +2834,79 @@
   // ----------------------------------------------------------
   var mockTasks = {};
 
+  var MOCK_CONN_ITEMS = [
+    { id: 'openai', name: 'OpenAI', category: 'ai', url: 'https://api.openai.com/v1/models', abbr: 'OA', color: '#10a37f' },
+    { id: 'claude', name: 'Claude', category: 'ai', url: 'https://api.anthropic.com/v1/messages', abbr: 'C', color: '#d97757' },
+    { id: 'gemini', name: 'Gemini', category: 'ai', url: 'https://generativelanguage.googleapis.com', abbr: 'G', color: '#4285f4' },
+    { id: 'grok', name: 'Grok', category: 'ai', url: 'https://api.x.ai/v1/models', abbr: 'X', color: '#111111' },
+    { id: 'openrouter', name: 'OpenRouter', category: 'ai', url: 'https://openrouter.ai', abbr: 'OR', color: '#6467f2' },
+    { id: 'poe', name: 'Poe', category: 'ai', url: 'https://poe.com', abbr: 'P', color: '#5d5cff' },
+    { id: 'suno', name: 'Suno', category: 'ai', url: 'https://suno.com', abbr: 'S', color: '#111111' },
+    { id: 'perplexity', name: 'Perplexity', category: 'ai', url: 'https://www.perplexity.ai', abbr: 'P', color: '#20808d' },
+    { id: 'netflix', name: 'Netflix', category: 'stream', url: 'https://www.netflix.com', abbr: 'N', color: '#e50914' },
+    { id: 'disney', name: 'Disney+', category: 'stream', url: 'https://www.disneyplus.com', abbr: 'D', color: '#113ccf' },
+    { id: 'youtube', name: 'YouTube', category: 'stream', url: 'https://www.youtube.com', abbr: 'YT', color: '#ff0033' },
+    { id: 'tiktok', name: 'TikTok', category: 'stream', url: 'https://www.tiktok.com', abbr: 'TT', color: '#111111' },
+    { id: 'spotify', name: 'Spotify', category: 'stream', url: 'https://open.spotify.com', abbr: 'S', color: '#1db954' },
+    { id: 'baidu', name: '百度', category: 'cn', url: 'https://www.baidu.com', abbr: '百', color: '#2932e1' },
+    { id: 'bilibili', name: '哔哩哔哩', category: 'cn', url: 'https://www.bilibili.com', abbr: 'B', color: '#00aeec' },
+    { id: 'wechat', name: '微信', category: 'cn', url: 'https://weixin.qq.com', abbr: '微', color: '#07c160' },
+    { id: 'aliyun', name: '阿里云', category: 'cn', url: 'https://www.aliyun.com', abbr: '阿', color: '#ff6a00' },
+    { id: 'taobao', name: '淘宝', category: 'cn', url: 'https://www.taobao.com', abbr: '淘', color: '#ff5000' },
+    { id: 'x', name: 'X', category: 'community', url: 'https://x.com', abbr: 'X', color: '#111111' },
+    { id: 'telegram', name: 'Telegram', category: 'community', url: 'https://telegram.org', abbr: 'T', color: '#229ed9' },
+    { id: 'reddit', name: 'Reddit', category: 'community', url: 'https://www.reddit.com', abbr: 'R', color: '#ff4500' },
+    { id: 'discord', name: 'Discord', category: 'community', url: 'https://discord.com', abbr: 'D', color: '#5865f2' },
+    { id: 'github', name: 'GitHub', category: 'dev', url: 'https://github.com', abbr: 'GH', color: '#24292f' },
+    { id: 'cloudflare', name: 'Cloudflare', category: 'dev', url: 'https://www.cloudflare.com', abbr: 'CF', color: '#f38020' },
+    { id: 'npm', name: 'npm', category: 'dev', url: 'https://registry.npmjs.org', abbr: 'N', color: '#cb3837' },
+    { id: 'docker', name: 'Docker Hub', category: 'dev', url: 'https://hub.docker.com', abbr: 'D', color: '#2496ed' },
+    { id: 'huggingface', name: 'Hugging Face', category: 'dev', url: 'https://huggingface.co', abbr: 'HF', color: '#ffd21e' },
+    { id: 'stackoverflow', name: 'Stack Overflow', category: 'dev', url: 'https://stackoverflow.com', abbr: 'SO', color: '#f48024' }
+  ];
+
+  var mockConnStore = null;
+
+  function mockConnSeed() {
+    var now = Math.floor(Date.now() / 1000);
+    var results = {};
+    MOCK_CONN_ITEMS.forEach(function (item, i) {
+      var status = i === 4 || i === 8 ? 'locked' : (i === 11 || i === 22 ? 'other' : (item.category === 'stream' ? 'unlocked' : 'ok'));
+      results[item.id] = {
+        id: item.id,
+        status: status,
+        label: status === 'locked' ? '未解锁' : status === 'unlocked' ? '已解锁' : status === 'other' ? '其他' : '已完成',
+        http: status === 'locked' ? 403 : status === 'other' ? 0 : 200,
+        latency_ms: status === 'other' ? 0 : 620 + i * 83,
+        region: 'SG',
+        error: status === 'other' ? '连接超时' : '',
+        tested_at: now - 90
+      };
+    });
+    return { tested_at: now - 90, region: 'SG', results: results };
+  }
+
+  function mockConnResult(id, fresh) {
+    var item = MOCK_CONN_ITEMS.filter(function (x) { return x.id === id; })[0];
+    if (!item) return null;
+    if (!mockConnStore) mockConnStore = mockConnSeed();
+    if (!fresh && mockConnStore.results[id]) return mockConnStore.results[id];
+    var seed = mockConnSeed().results[id];
+    if (fresh) {
+      seed.latency_ms = 400 + Math.floor(Math.random() * 1800);
+      seed.tested_at = Math.floor(Date.now() / 1000);
+      mockConnStore.results[id] = seed;
+      mockConnStore.tested_at = seed.tested_at;
+    }
+    return seed;
+  }
+
   function mockStatus() {
     var now = Math.floor(Date.now() / 1000);
     return {
       ok: true,
       time: now,
-      module: { id: 'Android_Nakedcore', name: 'Android Nakedcore', version: 'v3.3.2', versionCode: 332 },
+      module: { id: 'Android_Nakedcore', name: 'Android Nakedcore', version: 'v3.3.3', versionCode: 333 },
       device: { model: 'Pixel 8 Pro', android: '15', sdk: '35', abi: 'arm64-v8a', kernel: '6.1.75-android14-gki', manager: 'KernelSU' },
       settings: {
         active_core: 'sing-box',
@@ -2755,6 +3071,8 @@
       s.substore.frontend.version = s.substore.latest_frontend || s.substore.frontend.version;
     } else if (/^checkup/.test(a)) {
       s.update_check.checked_at = Math.floor(Date.now() / 1000);
+    } else if (/^connectivity test/.test(a)) {
+      mockConnStore = mockConnSeed();
     }
   }
 
@@ -2770,6 +3088,14 @@
           result.stdout = JSON.stringify(s.cores[args[2] || s.settings.active_core]);
         } else if (/^sub info/.test(a)) {
           result.stdout = JSON.stringify(mockStatus().substore);
+        } else if (a === 'connectivity list') {
+          result.stdout = JSON.stringify(MOCK_CONN_ITEMS);
+        } else if (a === 'connectivity results') {
+          if (!mockConnStore) mockConnStore = mockConnSeed();
+          result.stdout = JSON.stringify(mockConnStore);
+        } else if (/^connectivity probe /.test(a)) {
+          var connResult = mockConnResult(args[2], true);
+          result.stdout = JSON.stringify(connResult || {});
         } else if (/^cfg get /.test(a)) {
           result.stdout = mockText(args[2]);
         } else if (/^cfg check/.test(a) || /^cfg commit/.test(a) || /^cfg put/.test(a) || /^cfg reset/.test(a)) {
@@ -2898,7 +3224,7 @@
     if (q.get('nobanner') === '1') document.body.classList.add('hide-preview');
     var hash = String(window.location.hash || '').replace('#', '');
     var initialPage = q.get('page') || hash || 'home';
-    if (initialPage !== 'home' && initialPage !== 'core' && initialPage !== 'config') initialPage = 'home';
+    if (initialPage !== 'home' && initialPage !== 'core' && initialPage !== 'config' && initialPage !== 'connectivity') initialPage = 'home';
     state.page = initialPage;
     $$('.page').forEach(function (el) { el.classList.toggle('is-active', el.dataset.page === initialPage); });
     $$('.tab').forEach(function (el) {
@@ -2907,6 +3233,10 @@
       if (active) el.setAttribute('aria-current', 'page');
       else el.removeAttribute('aria-current');
     });
+
+    if (initialPage === 'connectivity' && !state.conn.loaded && !state.conn.loading) {
+      loadConnectivity();
+    }
 
     if (runtime.preview) {
       state.status = mockStatus();
