@@ -1165,15 +1165,29 @@
   }
 
   function connTone(status) {
-    if (status === 'unlocked' || status === 'ok') return 'ok';
-    if (status === 'locked') return 'bad';
-    if (status === 'other') return 'warn';
+    if (status === 'available') return 'ok';
+    if (status === 'restricted' || status === 'disallowed-isp' || status === 'blocked' ||
+        status === 'unsupported-region' || status === 'originals-only' || status === 'coming-soon') return 'warn';
+    if (status === 'unavailable' || status === 'timeout' || status === 'failed') return 'bad';
     return 'neutral';
   }
 
   function connStatusText(result) {
     if (!result) return '未测试';
-    return result.label || (result.status === 'locked' ? '未解锁' : result.status === 'unlocked' ? '已解锁' : result.status === 'ok' ? '已完成' : '其他');
+    if (result.label) return result.label;
+    var labels = {
+      available: '可用',
+      restricted: '访问受限',
+      'disallowed-isp': '不允许的 ISP',
+      blocked: '已被封禁',
+      'unsupported-region': '地区不支持',
+      'originals-only': '仅限自制内容',
+      'coming-soon': '即将上线',
+      unavailable: '不可用',
+      timeout: '超时',
+      failed: '检测失败'
+    };
+    return labels[result.status] || '检测失败';
   }
 
   function connColorStyle(item) {
@@ -1192,15 +1206,17 @@
   }
 
   function connCounts() {
-    var counts = { done: 0, locked: 0, other: 0 };
+    var counts = { done: 0, restricted: 0, other: 0 };
     (state.conn.items || []).forEach(function (item) {
       var result = state.conn.results[item.id];
       if (!result) {
         counts.other++;
-      } else if (result.status === 'ok' || result.status === 'unlocked') {
+      } else if (result.status === 'available') {
         counts.done++;
-      } else if (result.status === 'locked') {
-        counts.locked++;
+      } else if (result.status === 'restricted' || result.status === 'disallowed-isp' ||
+                 result.status === 'blocked' || result.status === 'unsupported-region' ||
+                 result.status === 'originals-only' || result.status === 'coming-soon') {
+        counts.restricted++;
       } else {
         counts.other++;
       }
@@ -1230,14 +1246,14 @@
     var c = state.conn;
     var counts = connCounts();
     var testing = taskRunning() && state.task && state.task.label === '连通性测试';
-    var head = '<div class="section-head conn-head"><div><h2>连通性测试</h2><p>通过当前网络与内核 TUN 检测常用服务可达性</p></div>' +
+    var head = '<div class="section-head conn-head"><div><h2>连通性测试</h2><p>按真实页面内容与地区字段检测服务状态</p></div>' +
       '<div class="conn-head__actions"><button class="btn btn--soft btn--sm" type="button" data-action="conn.reload"' + disableAttr() + '>' + icon('refresh', 14) + '刷新</button>' +
       '<button class="btn btn--primary btn--sm" type="button" data-action="conn.test"' + disableAttr() + '>' + icon('play', 14) + (testing ? '测试中…' : '全部测试') + '</button></div></div>';
 
     var summary = '<div class="conn-summary">' +
-      '<div class="conn-stat conn-stat--ok"><strong>' + counts.done + '</strong><span>已完成</span></div>' +
-      '<div class="conn-stat conn-stat--bad"><strong>' + counts.locked + '</strong><span>未解锁</span></div>' +
-      '<div class="conn-stat conn-stat--warn"><strong>' + counts.other + '</strong><span>其他</span></div>' +
+      '<div class="conn-stat conn-stat--ok"><strong>' + counts.done + '</strong><span>可用</span></div>' +
+      '<div class="conn-stat conn-stat--warn"><strong>' + counts.restricted + '</strong><span>受限</span></div>' +
+      '<div class="conn-stat conn-stat--bad"><strong>' + counts.other + '</strong><span>其他</span></div>' +
       '</div>';
 
     var filters = '<div class="conn-filters" role="tablist" aria-label="连通性分类">' + CONN_CATEGORIES.map(function (it) {
@@ -1248,7 +1264,7 @@
     if (testing) {
       note = '<div class="conn-running"><span class="spinner"></span><span>正在测试全部服务，结果会在完成后写入。</span></div>';
     } else if (c.testedAt) {
-      note = '<div class="conn-tested">最近测试 ' + escapeHTML(fmtTime(c.testedAt)) + (c.region ? ' · 出口 ' + escapeHTML(c.region) : '') + '</div>';
+      note = '<div class="conn-tested">最近测试 ' + escapeHTML(fmtTime(c.testedAt)) + '</div>';
     }
 
     var body;
@@ -1278,7 +1294,7 @@
     }
 
     root.innerHTML = '<section class="conn-page">' + head + summary + filters + note + body +
-      '<div class="hint conn-hint">结果来自本机 curl，仅代表当前网络环境；流媒体「已解锁」为 HTTP 可达判断，不保证内容版权可用。</div></section>';
+      '<div class="hint conn-hint">状态参考 FlClash 服务状态规则，通过真实页面 / API 内容判断；流媒体结果不保证账号权益或内容版权可用。</div></section>';
   }
 
   async function loadConnectivity(force) {
@@ -2835,34 +2851,19 @@
   var mockTasks = {};
 
   var MOCK_CONN_ITEMS = [
-    { id: 'openai', name: 'OpenAI', category: 'ai', url: 'https://api.openai.com/v1/models', abbr: 'OA', color: '#10a37f' },
-    { id: 'claude', name: 'Claude', category: 'ai', url: 'https://api.anthropic.com/v1/messages', abbr: 'C', color: '#d97757' },
-    { id: 'gemini', name: 'Gemini', category: 'ai', url: 'https://generativelanguage.googleapis.com', abbr: 'G', color: '#4285f4' },
-    { id: 'grok', name: 'Grok', category: 'ai', url: 'https://api.x.ai/v1/models', abbr: 'X', color: '#111111' },
-    { id: 'openrouter', name: 'OpenRouter', category: 'ai', url: 'https://openrouter.ai', abbr: 'OR', color: '#6467f2' },
-    { id: 'poe', name: 'Poe', category: 'ai', url: 'https://poe.com', abbr: 'P', color: '#5d5cff' },
-    { id: 'suno', name: 'Suno', category: 'ai', url: 'https://suno.com', abbr: 'S', color: '#111111' },
-    { id: 'perplexity', name: 'Perplexity', category: 'ai', url: 'https://www.perplexity.ai', abbr: 'P', color: '#20808d' },
-    { id: 'netflix', name: 'Netflix', category: 'stream', url: 'https://www.netflix.com', abbr: 'N', color: '#e50914' },
-    { id: 'disney', name: 'Disney+', category: 'stream', url: 'https://www.disneyplus.com', abbr: 'D', color: '#113ccf' },
-    { id: 'youtube', name: 'YouTube', category: 'stream', url: 'https://www.youtube.com', abbr: 'YT', color: '#ff0033' },
-    { id: 'tiktok', name: 'TikTok', category: 'stream', url: 'https://www.tiktok.com', abbr: 'TT', color: '#111111' },
+    { id: 'google', name: 'Google', category: 'dev', url: 'https://www.google.com/generate_204', abbr: 'G', color: '#4285f4' },
+    { id: 'github', name: 'GitHub', category: 'dev', url: 'https://github.com/', abbr: 'GH', color: '#24292f' },
+    { id: 'youtube', name: 'YouTube', category: 'stream', url: 'https://www.youtube.com/premium?hl=en', abbr: 'YT', color: '#ff0033' },
+    { id: 'chatgpt', name: 'ChatGPT', category: 'ai', url: 'https://chat.openai.com/cdn-cgi/trace', abbr: 'C', color: '#10a37f' },
+    { id: 'claude', name: 'Claude', category: 'ai', url: 'https://claude.ai/cdn-cgi/trace', abbr: 'C', color: '#d97757' },
+    { id: 'gemini', name: 'Gemini', category: 'ai', url: 'https://gemini.google.com', abbr: 'G', color: '#4285f4' },
+    { id: 'netflix', name: 'Netflix', category: 'stream', url: 'https://www.netflix.com/title/81280792', abbr: 'N', color: '#e50914' },
+    { id: 'disney-plus', name: 'Disney+', category: 'stream', url: 'https://www.disneyplus.com', abbr: 'D', color: '#113ccf' },
+    { id: 'prime-video', name: 'Prime Video', category: 'stream', url: 'https://www.primevideo.com', abbr: 'P', color: '#00a8e1' },
     { id: 'spotify', name: 'Spotify', category: 'stream', url: 'https://open.spotify.com', abbr: 'S', color: '#1db954' },
-    { id: 'baidu', name: '百度', category: 'cn', url: 'https://www.baidu.com', abbr: '百', color: '#2932e1' },
-    { id: 'bilibili', name: '哔哩哔哩', category: 'cn', url: 'https://www.bilibili.com', abbr: 'B', color: '#00aeec' },
-    { id: 'wechat', name: '微信', category: 'cn', url: 'https://weixin.qq.com', abbr: '微', color: '#07c160' },
-    { id: 'aliyun', name: '阿里云', category: 'cn', url: 'https://www.aliyun.com', abbr: '阿', color: '#ff6a00' },
-    { id: 'taobao', name: '淘宝', category: 'cn', url: 'https://www.taobao.com', abbr: '淘', color: '#ff5000' },
-    { id: 'x', name: 'X', category: 'community', url: 'https://x.com', abbr: 'X', color: '#111111' },
-    { id: 'telegram', name: 'Telegram', category: 'community', url: 'https://telegram.org', abbr: 'T', color: '#229ed9' },
-    { id: 'reddit', name: 'Reddit', category: 'community', url: 'https://www.reddit.com', abbr: 'R', color: '#ff4500' },
+    { id: 'tiktok', name: 'TikTok', category: 'stream', url: 'https://www.tiktok.com/', abbr: 'TT', color: '#111111' },
     { id: 'discord', name: 'Discord', category: 'community', url: 'https://discord.com', abbr: 'D', color: '#5865f2' },
-    { id: 'github', name: 'GitHub', category: 'dev', url: 'https://github.com', abbr: 'GH', color: '#24292f' },
-    { id: 'cloudflare', name: 'Cloudflare', category: 'dev', url: 'https://www.cloudflare.com', abbr: 'CF', color: '#f38020' },
-    { id: 'npm', name: 'npm', category: 'dev', url: 'https://registry.npmjs.org', abbr: 'N', color: '#cb3837' },
-    { id: 'docker', name: 'Docker Hub', category: 'dev', url: 'https://hub.docker.com', abbr: 'D', color: '#2496ed' },
-    { id: 'huggingface', name: 'Hugging Face', category: 'dev', url: 'https://huggingface.co', abbr: 'HF', color: '#ffd21e' },
-    { id: 'stackoverflow', name: 'Stack Overflow', category: 'dev', url: 'https://stackoverflow.com', abbr: 'SO', color: '#f48024' }
+    { id: 'bilibili', name: '哔哩哔哩', category: 'cn', url: 'https://www.bilibili.com', abbr: 'B', color: '#00aeec' }
   ];
 
   var mockConnStore = null;
@@ -2870,20 +2871,32 @@
   function mockConnSeed() {
     var now = Math.floor(Date.now() / 1000);
     var results = {};
+    var labels = {
+      available: '可用', restricted: '访问受限', blocked: '已被封禁',
+      'unsupported-region': '地区不支持', 'originals-only': '仅限自制内容',
+      unavailable: '不可用', timeout: '超时', failed: '检测失败'
+    };
+    var forced = {
+      netflix: 'originals-only',
+      'disney-plus': 'unsupported-region',
+      'prime-video': 'unavailable',
+      spotify: 'restricted',
+      gemini: 'available'
+    };
     MOCK_CONN_ITEMS.forEach(function (item, i) {
-      var status = i === 4 || i === 8 ? 'locked' : (i === 11 || i === 22 ? 'other' : (item.category === 'stream' ? 'unlocked' : 'ok'));
+      var status = forced[item.id] || 'available';
       results[item.id] = {
         id: item.id,
         status: status,
-        label: status === 'locked' ? '未解锁' : status === 'unlocked' ? '已解锁' : status === 'other' ? '其他' : '已完成',
-        http: status === 'locked' ? 403 : status === 'other' ? 0 : 200,
-        latency_ms: status === 'other' ? 0 : 620 + i * 83,
-        region: 'SG',
-        error: status === 'other' ? '连接超时' : '',
+        label: labels[status] || '检测失败',
+        http: status === 'unavailable' ? 0 : 200,
+        latency_ms: status === 'unavailable' ? 0 : 420 + i * 73,
+        region: status === 'available' || status === 'originals-only' ? 'SG' : '',
+        error: status === 'unavailable' ? '连接超时' : '',
         tested_at: now - 90
       };
     });
-    return { tested_at: now - 90, region: 'SG', results: results };
+    return { tested_at: now - 90, region: '', results: results };
   }
 
   function mockConnResult(id, fresh) {
@@ -2906,7 +2919,7 @@
     return {
       ok: true,
       time: now,
-      module: { id: 'Android_Nakedcore', name: 'Android Nakedcore', version: 'v3.3.4', versionCode: 334 },
+      module: { id: 'Android_Nakedcore', name: 'Android Nakedcore', version: 'v3.3.5', versionCode: 335 },
       device: { model: 'Pixel 8 Pro', android: '15', sdk: '35', abi: 'arm64-v8a', kernel: '6.1.75-android14-gki', manager: 'KernelSU' },
       settings: {
         active_core: 'sing-box',

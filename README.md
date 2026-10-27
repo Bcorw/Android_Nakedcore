@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v3.3.4-2f6fed">
+  <img alt="version" src="https://img.shields.io/badge/version-v3.3.5-2f6fed">
   <img alt="platform" src="https://img.shields.io/badge/platform-Android%208%2B-3ddc84">
   <img alt="root" src="https://img.shields.io/badge/root-KernelSU%20%7C%20Magisk%20%7C%20APatch-111111">
   <img alt="license" src="https://img.shields.io/badge/license-GPL--3.0-blue">
@@ -29,7 +29,7 @@ Android Nakedcore 是一个面向 **Magisk / KernelSU / APatch** 的裸核代理
 - **可恢复**：异步任务落盘、运行时副本、终端 wrapper 不依赖 `/system`
 - **无内置大二进制**：首次使用时从上游 release 下载 Node / 内核 / Sub-Store
 
-> 当前版本：**v3.3.4** · 已在 Xiaomi 13（fuxi）/ Android 17 / KernelSU 实机验证。
+> 当前版本：**v3.3.5** · 已在 Xiaomi 13（fuxi）/ Android 17 / KernelSU 实机验证。
 
 ## 界面
 
@@ -108,11 +108,14 @@ Android Nakedcore 是一个面向 **Magisk / KernelSU / APatch** 的裸核代理
 
 ### 连通性测试
 
-- 28 个常用服务，按 AI / 流媒体 / 国内直连 / 社区平台 / 开发者分类
-- 通过当前系统网络 / TUN 执行 curl，记录 HTTP 状态、延迟和出口地区
-- 统计「已完成 / 未解锁 / 其他」，支持分类筛选和单项刷新
+- 参考 FlClash 「服务状态」的真实内容检测，不再只看 HTTP 200
+- 覆盖 13 个服务，按 AI / 流媒体 / 国内直连 / 社区平台 / 开发者分类
+- 检查真实页面、API 字段与地区信息：如 ChatGPT 封锁页、Claude 出口地区、Gemini 地区标记、Netflix 标题/CDN、Disney+ 握手、Prime Video 地区字段、Spotify/TikTok/Bilibili 地区状态
+- 状态包括「可用 / 访问受限 / 地区不支持 / 已被封禁 / 仅限自制内容 / 不可用 / 超时 / 检测失败」
+- 统计「可用 / 受限 / 其他」，支持分类筛选、单项刷新和详情
 - 结果持久化，重新打开 WebUI 仍可查看
-- 流媒体「已解锁」只代表 HTTP 可达，不保证内容版权可用
+
+> 流媒体状态是按真实响应内容判断的地区/可用性，不保证账号权益或内容版权可用。
 
 ### 本地面板
 
@@ -140,7 +143,7 @@ Android Nakedcore 是一个面向 **Magisk / KernelSU / APatch** 的裸核代理
 
 ### 安装
 
-1. 下载 `Android_Nakedcore-v3.3.4.zip`；
+1. 下载 `Android_Nakedcore-v3.3.5.zip`；
 2. 在 Magisk / KernelSU / APatch 管理器中「从本地安装」；
 3. 重启设备，或直接打开模块 WebUI；
 4. 进入「核心」页安装 sing-box / mihomo。
@@ -187,7 +190,7 @@ nakedcore hotspot disable
 nakedcore connectivity list
 nakedcore connectivity results
 nakedcore connectivity test
-nakedcore connectivity probe openai
+nakedcore connectivity probe chatgpt
 
 nakedcore ui update dashboard
 nakedcore ui clear
@@ -267,13 +270,13 @@ nakedcore log hotspot 200
 ```sh
 ./build.sh
 # 或覆盖版本名
-./build.sh 3.3.4
+./build.sh 3.3.5
 ```
 
 输出：
 
 ```text
-build/Android_Nakedcore-v3.3.4.zip
+build/Android_Nakedcore-v3.3.5.zip
 ```
 
 构建会校验 shell 语法、`webroot/index.html`、`app.js` 和模块入口文件。
@@ -290,6 +293,7 @@ build/Android_Nakedcore-v3.3.4.zip
 - [Sub-Store](https://github.com/sub-store-org/Sub-Store) / [Sub-Store-Front-End](https://github.com/sub-store-org/Sub-Store-Front-End)
 - [sing-box](https://github.com/SagerNet/sing-box) / [mihomo](https://github.com/MetaCubeX/mihomo)
 - [node-android-build](https://github.com/Delusions6515/node-android-build)
+- [FlClash](https://github.com/chen08209/FlClash)：服务状态检测规则参考
 - [KernelSU](https://github.com/tiann/KernelSU) / [Magisk](https://github.com/topjohnwu/Magisk) / [APatch](https://github.com/bmax121/APatch)
 
 GPL-3.0。各上游组件版权归其作者所有。
