@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v3.3.5-2f6fed">
+  <img alt="version" src="https://img.shields.io/badge/version-V1.1.1-2f6fed">
   <img alt="platform" src="https://img.shields.io/badge/platform-Android%208%2B-3ddc84">
   <img alt="root" src="https://img.shields.io/badge/root-KernelSU%20%7C%20Magisk%20%7C%20APatch-111111">
   <img alt="license" src="https://img.shields.io/badge/license-GPL--3.0-blue">
@@ -29,7 +29,7 @@ Android Nakedcore 是一个面向 **Magisk / KernelSU / APatch** 的裸核代理
 - **可恢复**：异步任务落盘、运行时副本、终端 wrapper 不依赖 `/system`
 - **无内置大二进制**：首次使用时从上游 release 下载 Node / 内核 / Sub-Store
 
-> 当前版本：**v3.3.5** · 已在 Xiaomi 13（fuxi）/ Android 17 / KernelSU 实机验证。
+> 当前版本：**V1.1.1** · 已在 Xiaomi 13（fuxi）/ Android 17 / KernelSU 实机验证。
 
 ## 界面
 
@@ -143,7 +143,7 @@ Android Nakedcore 是一个面向 **Magisk / KernelSU / APatch** 的裸核代理
 
 ### 安装
 
-1. 下载 `Android_Nakedcore-v3.3.5.zip`；
+1. 下载 `Android_Nakedcore-V1.1.1.zip`；
 2. 在 Magisk / KernelSU / APatch 管理器中「从本地安装」；
 3. 重启设备，或直接打开模块 WebUI；
 4. 进入「核心」页安装 sing-box / mihomo。
@@ -270,13 +270,13 @@ nakedcore log hotspot 200
 ```sh
 ./build.sh
 # 或覆盖版本名
-./build.sh 3.3.5
+./build.sh V1.1.1
 ```
 
 输出：
 
 ```text
-build/Android_Nakedcore-v3.3.5.zip
+build/Android_Nakedcore-V1.1.1.zip
 ```
 
 构建会校验 shell 语法、`webroot/index.html`、`app.js` 和模块入口文件。

@@ -2919,7 +2919,7 @@
     return {
       ok: true,
       time: now,
-      module: { id: 'Android_Nakedcore', name: 'Android Nakedcore', version: 'v3.3.5', versionCode: 335 },
+      module: { id: 'Android_Nakedcore', name: 'Android Nakedcore', version: 'V1.1.1', versionCode: 1111 },
       device: { model: 'Pixel 8 Pro', android: '15', sdk: '35', abi: 'arm64-v8a', kernel: '6.1.75-android14-gki', manager: 'KernelSU' },
       settings: {
         active_core: 'sing-box',
