@@ -25,8 +25,9 @@ export NC_MODDIR
 # shellcheck source=scripts/substore.sh
 . "$MODPATH/scripts/substore.sh"
 
+_ver=$(sed -n 's/^version=//p' "$MODPATH/module.prop" 2>/dev/null | head -n 1)
 ui_print "=========================================="
-ui_print "   Android Nakedcore v3.0"
+ui_print "   Android Nakedcore ${_ver:-unknown}"
 ui_print "   sing-box / mihomo / Sub-Store"
 ui_print "=========================================="
 

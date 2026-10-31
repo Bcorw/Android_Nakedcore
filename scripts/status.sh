@@ -92,17 +92,17 @@ nc_checkup() {
 }
 
 nc_status_core() {
-    local _bin _cfg _cfg_exists _cfg_size _channel _check _core _dirty _installed _latest _log _marker _pid _pidfile _rest _rollback _running _state _version _vf
+    local _bin _cfg _cfg_exists _cfg_size _channel _check _core _dirty _installed _latest _log _marker _pid _rest _rollback _running _state _version _vf
     _core=$1
     case "$_core" in
         sing-box)
             _bin="$NC_SB_BIN"; _cfg="$NC_SB_CONFIG"; _vf="$NC_BIN/sing-box.version"
-            _pidfile="$NC_RUN/sing-box.pid"; _log="$NC_RUN/sing-box.log"
+            _log="$NC_RUN/sing-box.log"
             _check="$NC_RUN/sing-box.check"; _marker="$NC_RUN/sing-box.started"
             ;;
         mihomo)
             _bin="$NC_MH_BIN"; _cfg="$NC_MH_CONFIG"; _vf="$NC_BIN/mihomo.version"
-            _pidfile="$NC_RUN/mihomo.pid"; _log="$NC_RUN/mihomo.log"
+            _log="$NC_RUN/mihomo.log"
             _check="$NC_RUN/mihomo.check"; _marker="$NC_RUN/mihomo.started"
             ;;
         *) return 1 ;;
@@ -113,14 +113,12 @@ nc_status_core() {
 
     _running=false
     _pid=0
-    if [ -f "$_pidfile" ]; then
-        IFS= read -r _pid <"$_pidfile" 2>/dev/null
-        if [ -n "$_pid" ] && nc_pid_alive "$_pid"; then
-            _running=true
-        else
-            _pid=0
-        fi
-    fi
+    # 用 nc_core_pid 校验 cmdline，避免重启后 PID 复用导致的「假运行中」
+    _pid=$(nc_core_pid "$_core" 2>/dev/null)
+    case "$_pid" in
+        ""|*[!0-9]*) _pid=0 ;;
+        *) _running=true ;;
+    esac
 
     _version=""
     if [ -f "$_vf" ] && { [ ! -x "$_bin" ] || [ ! "$_bin" -nt "$_vf" ]; }; then
@@ -177,20 +175,17 @@ nc_status_core() {
 }
 
 nc_status_substore() {
-    local _autostart_json _backend_installed _backend_ver _direct _dirty _frontend_installed _frontend_ver _health _health_reason _merge_json _node _node_installed _node_ver _pid _running _started _sub_log _sub_pidfile
+    local _autostart_json _backend_installed _backend_ver _direct _dirty _frontend_installed _frontend_ver _health _health_reason _merge_json _node _node_installed _node_ver _pid _running _started _sub_log
     nc_sub_load_env
 
     _running=false
     _pid=0
-    _sub_pidfile=$(nc_sub_pidfile)
-    if [ -f "$_sub_pidfile" ]; then
-        IFS= read -r _pid <"$_sub_pidfile" 2>/dev/null
-        if [ -n "$_pid" ] && nc_pid_alive "$_pid"; then
-            _running=true
-        else
-            _pid=0
-        fi
-    fi
+    # 同样校验 cmdline，避免 Node PID 被系统复用后误报运行中
+    _pid=$(nc_sub_pid 2>/dev/null)
+    case "$_pid" in
+        ""|*[!0-9]*) _pid=0 ;;
+        *) _running=true ;;
+    esac
 
     _node=$(nc_sub_node 2>/dev/null)
     _node_ver=""
@@ -248,7 +243,7 @@ nc_status_json() {
     _hotspot_json=$(nc_hotspot_status_json)
     _wifi_json=$(nc_wifi_status_json)
     _task_json=$(nc_task_current_json)
-    _last_task_json="null"
+    _last_task_json=$(nc_task_last_json)
 
     _model=$(nc_prop ro.product.model)
     [ -n "$_model" ] || _model=$(nc_prop ro.product.device)

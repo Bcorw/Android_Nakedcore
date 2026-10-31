@@ -357,6 +357,7 @@
     conn: {
       items: [],
       results: {},
+      context: null,
       region: '',
       testedAt: 0,
       loaded: false,
@@ -1198,19 +1199,24 @@
 
   function connMetric(result) {
     if (!result) return '尚未测试';
+    // 失败时优先给出人能看懂的诊断，而不是裸 curl 报错
+    if ((result.status === 'failed' || result.status === 'timeout' || result.status === 'unavailable') && result.hint) {
+      return result.hint;
+    }
     var parts = [];
     if (result.region) parts.push(result.region);
     if (result.latency_ms) parts.push(result.latency_ms + ' ms');
     if (result.http) parts.push('HTTP ' + result.http);
-    return parts.length ? parts.join(' · ') : (result.error || '无响应');
+    if (parts.length) return parts.join(' · ');
+    return result.hint || result.error || '无响应';
   }
 
   function connCounts() {
-    var counts = { done: 0, restricted: 0, other: 0 };
+    var counts = { done: 0, restricted: 0, bad: 0, untested: 0 };
     (state.conn.items || []).forEach(function (item) {
       var result = state.conn.results[item.id];
       if (!result) {
-        counts.other++;
+        counts.untested++;
       } else if (result.status === 'available') {
         counts.done++;
       } else if (result.status === 'restricted' || result.status === 'disallowed-isp' ||
@@ -1218,10 +1224,24 @@
                  result.status === 'originals-only' || result.status === 'coming-soon') {
         counts.restricted++;
       } else {
-        counts.other++;
+        counts.bad++;
       }
     });
     return counts;
+  }
+
+  function connContextNote(c) {
+    var ctx = c.context;
+    if (!ctx) return '';
+    if (!ctx.running) {
+      return '<div class="conn-note conn-note--warn">' + icon('alert', 16) +
+        '<div><strong>' + escapeHTML(ctx.core || '内核') + ' 未运行</strong>，以下是直连网络的检测结果，不代表代理可用性。</div></div>';
+    }
+    if (!ctx.tun) {
+      return '<div class="conn-note">' + icon('info', 16) +
+        '<div>内核在运行，但没有检测到 TUN 接口，部分结果可能来自直连。</div></div>';
+    }
+    return '';
   }
 
   function connRow(item) {
@@ -1253,18 +1273,19 @@
     var summary = '<div class="conn-summary">' +
       '<div class="conn-stat conn-stat--ok"><strong>' + counts.done + '</strong><span>可用</span></div>' +
       '<div class="conn-stat conn-stat--warn"><strong>' + counts.restricted + '</strong><span>受限</span></div>' +
-      '<div class="conn-stat conn-stat--bad"><strong>' + counts.other + '</strong><span>其他</span></div>' +
+      '<div class="conn-stat conn-stat--bad"><strong>' + counts.bad + '</strong><span>异常</span></div>' +
+      '<div class="conn-stat conn-stat--idle"><strong>' + counts.untested + '</strong><span>未测</span></div>' +
       '</div>';
 
     var filters = '<div class="conn-filters" role="tablist" aria-label="连通性分类">' + CONN_CATEGORIES.map(function (it) {
       return '<button class="conn-filter' + (c.filter === it[0] ? ' is-active' : '') + '" type="button" role="tab" aria-selected="' + (c.filter === it[0] ? 'true' : 'false') + '" data-action="conn.filter" data-filter="' + it[0] + '">' + escapeHTML(it[1]) + '</button>';
     }).join('') + '</div>';
 
-    var note = '';
+    var note = connContextNote(c);
     if (testing) {
-      note = '<div class="conn-running"><span class="spinner"></span><span>正在测试全部服务，结果会在完成后写入。</span></div>';
+      note += '<div class="conn-running"><span class="spinner"></span><span>正在测试全部服务，结果会在完成后写入。</span></div>';
     } else if (c.testedAt) {
-      note = '<div class="conn-tested">最近测试 ' + escapeHTML(fmtTime(c.testedAt)) + '</div>';
+      note += '<div class="conn-tested">最近测试 ' + escapeHTML(fmtTime(c.testedAt)) + '</div>';
     }
 
     var body;
@@ -1315,6 +1336,7 @@
       }
       c.items = Array.isArray(list) ? list : [];
       c.results = results.results || {};
+      c.context = results.context || null;
       c.region = results.region || '';
       c.testedAt = Number(results.tested_at) || 0;
       c.loaded = true;
@@ -1366,6 +1388,7 @@
       ['HTTP', result && result.http ? String(result.http) : '—'],
       ['测试时间', result && result.tested_at ? fmtTime(result.tested_at) : '—']
     ];
+    if (result && result.hint) rows.push(['诊断', result.hint]);
     var body = '<div class="conn-detail">' + rows.map(function (row) {
       return '<div class="conn-detail__row"><span>' + escapeHTML(row[0]) + '</span><strong' + (row[0] === '地址' ? ' class="inline-code"' : '') + '>' + escapeHTML(row[1]) + '</strong></div>';
     }).join('') + (result && result.error ? '<div class="conn-detail__error">' + escapeHTML(result.error) + '</div>' : '') +
@@ -2919,7 +2942,7 @@
     return {
       ok: true,
       time: now,
-      module: { id: 'Android_Nakedcore', name: 'Android Nakedcore', version: 'V1.1.1', versionCode: 1111 },
+      module: { id: 'Android_Nakedcore', name: 'Android Nakedcore', version: 'V1.2.0', versionCode: 1120 },
       device: { model: 'Pixel 8 Pro', android: '15', sdk: '35', abi: 'arm64-v8a', kernel: '6.1.75-android14-gki', manager: 'KernelSU' },
       settings: {
         active_core: 'sing-box',

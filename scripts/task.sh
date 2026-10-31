@@ -190,8 +190,10 @@ nc_task_current_id() {
     # 快路径：task start 写入 current_task；没有就代表当前没有 UI 任务
     [ -f "$NC_RUN/current_task" ] || return 1
     IFS= read -r _id <"$NC_RUN/current_task" 2>/dev/null
-    _id=${_id%?}
-    if [ -n "$_id" ] && [ "$(nc_task_state "$_id")" = "running" ]; then
+    # 文件可能带换行（历史版本 / 手工写入），统一裁掉，不能截断 ID 本身
+    _id=$(printf '%s' "$_id" | tr -d ' \r\n\t')
+    [ -n "$_id" ] || return 1
+    if [ "$(nc_task_state "$_id")" = "running" ]; then
         printf '%s' "$_id"
         return 0
     fi

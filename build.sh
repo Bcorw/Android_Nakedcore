@@ -14,7 +14,17 @@ VERSION_ARG="${1:-}"
 die() { echo "[Error] $1" >&2; exit 1; }
 info() { echo "[*] $1"; }
 
-command -v zip >/dev/null 2>&1 || die "未找到 zip，请先安装 zip"
+# 打包工具：zip 优先，其次 python3（保留 Unix 权限位），最后 7z
+ZIPPER=""
+if command -v zip >/dev/null 2>&1; then
+    ZIPPER="zip"
+elif command -v python3 >/dev/null 2>&1; then
+    ZIPPER="python3"
+elif command -v 7z >/dev/null 2>&1; then
+    ZIPPER="7z"
+else
+    die "未找到 zip / python3 / 7z，无法打包"
+fi
 
 [ -f "$ROOT/nakedcore" ] || die "缺少 nakedcore"
 [ -f "$ROOT/scripts/common.sh" ] || die "缺少 scripts/common.sh"
@@ -68,7 +78,38 @@ node --check "$STAGE/webroot/app.js" 2>/dev/null || info "未找到 node 或 app
 mkdir -p "$OUT_DIR"
 OUT_ZIP="$OUT_DIR/Android_Nakedcore-${SAFE_VERSION}.zip"
 rm -f "$OUT_ZIP"
-(cd "$STAGE" && zip -rq "$OUT_ZIP" .)
+case "$ZIPPER" in
+    zip)
+        (cd "$STAGE" && zip -rq "$OUT_ZIP" .)
+        ;;
+    python3)
+        python3 - "$STAGE" "$OUT_ZIP" <<'PYZIP'
+import os, sys, zipfile
+stage, out = sys.argv[1], sys.argv[2]
+if os.path.exists(out):
+    os.remove(out)
+with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+    for root, dirs, files in os.walk(stage):
+        dirs.sort(); files.sort()
+        for name in dirs:
+            rel = os.path.relpath(os.path.join(root, name), stage)
+            info = zipfile.ZipInfo(rel + "/")
+            info.external_attr = (0o40755 << 16) | 0x10
+            z.writestr(info, b"")
+        for name in files:
+            full = os.path.join(root, name)
+            rel = os.path.relpath(full, stage)
+            info = zipfile.ZipInfo(rel)
+            info.external_attr = (os.stat(full).st_mode & 0o777) << 16
+            info.compress_type = zipfile.ZIP_DEFLATED
+            with open(full, "rb") as fh:
+                z.writestr(info, fh.read())
+PYZIP
+        ;;
+    7z)
+        (cd "$STAGE" && 7z a -tzip -bd -y "$OUT_ZIP" . >/dev/null)
+        ;;
+esac
 
 info "已生成: $OUT_ZIP"
 info "大小: $(du -h "$OUT_ZIP" | cut -f1)"

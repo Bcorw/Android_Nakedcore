@@ -1,0 +1,9 @@
+# 构建产物
+build/
+
+# 本地工具数据
+.workbuddy/
+
+# 系统杂项
+.DS_Store
+Thumbs.db

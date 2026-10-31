@@ -110,7 +110,7 @@ nc_cfg_put() {
         fi
     fi
 
-    _chunk="$NC_TMP/chunk.$$"
+    _chunk="$NC_TMP/chunk.$_target.$$"
     if ! printf '%s' "$_b64" | nc_b64decode >"$_chunk" 2>/dev/null; then
         nc_err "Base64 解码失败"
         rm -f "$_chunk"
